@@ -1,0 +1,5 @@
+add_executable(darcy_dynamic_fortran darcy_dynamic.F90)
+
+target_link_libraries(darcy_dynamic_fortran PRIVATE opencmisslibs mpi)
+
+install(TARGETS darcy_dynamic_fortran DESTINATION bin)
