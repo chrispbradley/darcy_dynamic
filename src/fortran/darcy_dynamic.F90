@@ -1,6 +1,4 @@
-PROGRAM DARCYDYNAMICEXAMPLE
-
-  !PROGRAM LIBRARIES
+PROGRAM darcy_dynamic
 
   USE OpenCMISS
   USE OpenCMISS_Iron
@@ -37,6 +35,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
   INTEGER(CMISSIntg), PARAMETER :: ProblemUserNumber=10
   INTEGER(CMISSIntg), PARAMETER :: GeneratedMeshUserNumber=11
   INTEGER(CMISSIntg), PARAMETER :: IndependentFieldUserNumberDarcy=12
+  INTEGER(CMISSIntg), PARAMETER :: AnalyticFieldUserNumber=13
 
   INTEGER(CMISSIntg), PARAMETER :: SolverDarcyUserNumber=1
   INTEGER(CMISSIntg), PARAMETER :: MaterialsFieldUserNumberDarcyPorosity=1
@@ -127,7 +126,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !Fields
   TYPE(cmfe_FieldsType) :: Fields
   !Field types
-  TYPE(cmfe_FieldType) :: GeometricField
+  TYPE(cmfe_FieldType) :: GeometricField,AnalyticField
   TYPE(cmfe_FieldType) :: EquationsSetField
   TYPE(cmfe_FieldType) :: DependentFieldDarcy
   TYPE(cmfe_FieldType) :: IndependentFieldDarcy
@@ -152,7 +151,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
 
   !Generic CMISS variables
 
-  INTEGER(CMISSIntg) :: EquationsSetIndex
+  INTEGER(CMISSIntg) :: EquationsSetIndex,i
   INTEGER(CMISSIntg) :: Err
 
 
@@ -166,7 +165,9 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !INITIALISE OPENCMISS
 
   CALL cmfe_Initialise(WorldCoordinateSystem,WorldRegion,Err)
+!  CALL cmfe_OutputSetOn("DarcyAnalytic",Err)
   CALL cmfe_ErrorHandlingModeSet(CMFE_ERRORS_TRAP_ERROR,Err)
+
   !Get the computational nodes information
   CALL cmfe_ComputationalNumberOfNodesGet(NumberOfComputationalNodes,Err)
   CALL cmfe_ComputationalNodeNumberGet(ComputationalNodeNumber,Err)
@@ -176,9 +177,9 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !
 
   !PROBLEM CONTROL PANEL
-  NUMBER_GLOBAL_X_ELEMENTS=1
+  NUMBER_GLOBAL_X_ELEMENTS=3
   NUMBER_GLOBAL_Y_ELEMENTS=3
-  NUMBER_GLOBAL_Z_ELEMENTS=1
+  NUMBER_GLOBAL_Z_ELEMENTS=3
   NUMBER_OF_DIMENSIONS=3
   BASIS_TYPE=CMFE_BASIS_LINEAR_LAGRANGE_INTERPOLATION
   BASIS_XI_INTERPOLATION_GEOMETRY=CMFE_BASIS_LINEAR_LAGRANGE_INTERPOLATION
@@ -232,27 +233,6 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !================================================================================================================================
   !
 
-  !Set diagnostics
-
-  DIAG_LEVEL_LIST(1)=1
-  DIAG_LEVEL_LIST(2)=2
-  DIAG_LEVEL_LIST(3)=3
-  DIAG_LEVEL_LIST(4)=4
-  DIAG_LEVEL_LIST(5)=5
-
-  DIAG_ROUTINE_LIST(1)="DARCY_EQUATION_FINITE_ELEMENT_CALCULATE"
-
-  !CMFE_ALL_DIAG_TYPE/CMFE_IN_DIAG_TYPE/CMFE_FROM_DIAG_TYPE
-!   CALL cmfe_DiagnosticsSetOn(CMFE_IN_DIAG_TYPE,DIAG_LEVEL_LIST,"DarcyDiagnostics",DIAG_ROUTINE_LIST,Err)
-
-  !CMFE_ALL_TIMING_TYPE/CMFE_IN_TIMING_TYPE/CMFE_FROM_TIMING_TYPE
-  !TIMING_ROUTINE_LIST(1)="PROBLEM_FINITE_ELEMENT_CALCULATE"
-  !CALL TIMING_SET_ON(IN_TIMING_TYPE,.TRUE.,"",TIMING_ROUTINE_LIST,ERR,ERROR,*999)
-
-  !
-  !================================================================================================================================
-  !
-
   !COORDINATE SYSTEM
 
   !Start the creation of a new RC coordinate system
@@ -272,6 +252,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !Start the creation of a new region
   CALL cmfe_Region_Initialise(Region,Err)
   CALL cmfe_Region_CreateStart(RegionUserNumber,WorldRegion,Region,Err)
+  CALL cmfe_Region_LabelSet(Region,"DarcyRegion",Err)
   !Set the regions coordinate system as defined above
   CALL cmfe_Region_CoordinateSystemSet(Region,CoordinateSystem,Err)
   !Finish the creation of the region
@@ -301,6 +282,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
     CALL cmfe_Basis_QuadratureNumberOfGaussXiSet(BasisGeometry,(/BASIS_XI_GAUSS_GEOMETRY,BASIS_XI_GAUSS_GEOMETRY, &
       & BASIS_XI_GAUSS_GEOMETRY/),Err)
   ENDIF
+  CALL cmfe_Basis_QuadratureLocalFaceGaussEvaluateSet(BasisGeometry,.true.,Err)
   !Finish the creation of the basis
   CALL cmfe_Basis_CreateFinish(BasisGeometry,Err)
   !
@@ -327,6 +309,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
       CALL cmfe_Basis_QuadratureNumberOfGaussXiSet(BasisVelocity,(/BASIS_XI_GAUSS_VELOCITY,BASIS_XI_GAUSS_VELOCITY, &
         & BASIS_XI_GAUSS_VELOCITY/),Err)
     ENDIF
+    CALL cmfe_Basis_QuadratureLocalFaceGaussEvaluateSet(BasisVelocity,.true.,Err)
     !Finish the creation of the basis
     CALL cmfe_Basis_CreateFinish(BasisVelocity,Err)
   ENDIF
@@ -356,6 +339,7 @@ PROGRAM DARCYDYNAMICEXAMPLE
       CALL cmfe_Basis_QuadratureNumberOfGaussXiSet(BasisPressure,(/BASIS_XI_GAUSS_PRESSURE,BASIS_XI_GAUSS_PRESSURE, &
         & BASIS_XI_GAUSS_PRESSURE/),Err)
     ENDIF
+    CALL cmfe_Basis_QuadratureLocalFaceGaussEvaluateSet(BasisPressure,.true.,Err)
     !Finish the creation of the basis
     CALL cmfe_Basis_CreateFinish(BasisPressure,Err)
   ENDIF
@@ -430,8 +414,9 @@ PROGRAM DARCYDYNAMICEXAMPLE
 !      ENDIF
 !    ENDDO
 !  ENDDO
-  CALL cmfe_Field_ParameterSetUpdateStart(GeometricField,CMFE_FIELD_U_VARIABLE_TYPE,CMFE_FIELD_VALUES_SET_TYPE,Err)
-  CALL cmfe_Field_ParameterSetUpdateFinish(GeometricField,CMFE_FIELD_U_VARIABLE_TYPE,CMFE_FIELD_VALUES_SET_TYPE,Err)
+
+  !Update the geometric field parameters
+  CALL cmfe_GeneratedMesh_GeometricParametersCalculate(GeneratedMesh,GeometricField,Err)
 
   !
   !================================================================================================================================
@@ -515,6 +500,20 @@ PROGRAM DARCYDYNAMICEXAMPLE
   ENDDO
   !Finish the equations set independent field variables
   CALL cmfe_EquationsSet_IndependentCreateFinish(EquationsSetDarcy,Err)
+
+  !
+  !================================================================================================================================
+  !
+
+  !ANALYTIC FIELD
+
+  !Create the equations set analytic field variables
+!  CALL cmfe_Field_Initialise(AnalyticField,Err)
+!  CALL cmfe_EquationsSet_AnalyticCreateStart(EquationsSetDarcy,CMFE_EQUATIONS_SET_DARCY_EQUATION_THREE_DIM_3, &
+!    & AnalyticFieldUserNumber,AnalyticField,Err)
+  !Finish the equations set analytic field variables
+!  CALL cmfe_EquationsSet_AnalyticCreateFinish(EquationsSetDarcy,Err)
+
 
   !
   !================================================================================================================================
@@ -630,6 +629,48 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !Start the creation of the equations set boundary conditions for Darcy
   CALL cmfe_BoundaryConditions_Initialise(BoundaryConditionsDarcy,Err)
   CALL cmfe_SolverEquations_BoundaryConditionsCreateStart(SolverEquationsDarcy,BoundaryConditionsDarcy,Err)
+
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 1,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 2,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 3,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 4,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 5,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 6,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 7,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 8,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 9,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 10,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 11,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 12,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 13,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 14,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 15,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+  CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+    & 16,3,CMFE_BOUNDARY_CONDITION_FIXED,1.0_CMISSRP,Err)
+
+  DO i=1,64
+    CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+      & i,1,CMFE_BOUNDARY_CONDITION_FIXED,0.0_CMISSRP,Err)
+    CALL cmfe_BoundaryConditions_SetNode(BoundaryConditionsDarcy,DependentFieldDarcy,CMFE_FIELD_U_VARIABLE_TYPE,1,1, &
+      & i,2,CMFE_BOUNDARY_CONDITION_FIXED,0.0_CMISSRP,Err)
+  END DO
+
+!  CALL cmfe_SolverEquations_BoundaryConditionsAnalytic(SolverEquationsDarcy,Err)
   !Finish the creation of the equations set boundary conditions for Darcy
   CALL cmfe_SolverEquations_BoundaryConditionsCreateFinish(SolverEquationsDarcy,Err)
 
@@ -637,10 +678,12 @@ PROGRAM DARCYDYNAMICEXAMPLE
   !================================================================================================================================
   !
 
-  !RUN SOLVERS
+  !Output Analytic analysis
+!  Call cmfe_AnalyticAnalysis_Output(DependentFieldDarcy,"DarcyAnalytic",Err)
 
-  !Turn of PETSc error handling
-  !CALL PETSC_ERRORHANDLING_SET_ON(ERR,ERROR,*999)
+  !
+  !================================================================================================================================
+  !
 
   !Solve the problem
   WRITE(*,'(A)') "Solving problem..."
@@ -658,8 +701,8 @@ PROGRAM DARCYDYNAMICEXAMPLE
     WRITE(*,'(A)') "Exporting fields..."
     CALL cmfe_Fields_Initialise(Fields,Err)
     CALL cmfe_Fields_Create(Region,Fields,Err)
-    CALL cmfe_Fields_NodesExport(Fields,"DynamicDarcy","FORTRAN",Err)
-    CALL cmfe_Fields_ElementsExport(Fields,"DynamicDarcy","FORTRAN",Err)
+    CALL cmfe_Fields_NodesExport(Fields,"darcy_dynamic","FORTRAN",Err)
+    CALL cmfe_Fields_ElementsExport(Fields,"darcy_dynamic","FORTRAN",Err)
     CALL cmfe_Fields_Finalise(Fields,Err)
     WRITE(*,'(A)') "Field exported!"
   ENDIF
@@ -669,4 +712,4 @@ PROGRAM DARCYDYNAMICEXAMPLE
   WRITE(*,'(A)') "Program successfully completed."
   STOP
 
-END PROGRAM DARCYDYNAMICEXAMPLE
+END PROGRAM darcy_dynamic
